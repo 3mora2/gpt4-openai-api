@@ -18,8 +18,11 @@ import random
 
 cf_challenge_form = (By.ID, 'challenge-form')
 
-chatgpt_textbox = (By.TAG_NAME, 'textarea')
-chatgpt_streaming = (By.CLASS_NAME, 'result-streaming')
+chatgpt_textbox = (By.CSS_SELECTOR, 'form textarea[id="prompt-textarea"][data-id="root"]')
+chatgpt_streaming = (
+        By.XPATH,
+        '//div[starts-with(@class, "result-streaming")]'
+    )
 chatgpt_big_response = (By.XPATH, '//div[@class="flex-1 overflow-hidden"]//div[p]')
 chatgpt_small_response = (
     By.XPATH,
@@ -42,6 +45,7 @@ chatgpt_chats_list_first_node = (
 
 stop_generating = (By.XPATH, "//button[contains(., 'Stop generating')]")
 regenerate_response = (By.XPATH, "//button[contains(., 'Regenerate response')]")
+continue_response = (By.XPATH, "//button[contains(., 'Continue generating')]")
 
 
 class ChatGptDriver:
@@ -50,21 +54,21 @@ class ChatGptDriver:
     '''
 
     def __init__(
-        self,
-        session_token: str = None,
-        conversation_id: str = '',
-        auth_type: str = None,
-        email: str = None,
-        password: str = None,
-        login_cookies_path: str = '',
-        captcha_solver: str = 'pypasser',
-        solver_apikey: str = '',
-        model: str = 'gpt4',
-        proxy: str = None,
-        chrome_args: list = [],
-        moderation: bool = True,
-        verbose: bool = False,
-        headless: bool = True,
+            self,
+            session_token: str = None,
+            conversation_id: str = '',
+            auth_type: str = None,
+            email: str = None,
+            password: str = None,
+            login_cookies_path: str = '',
+            captcha_solver: str = 'pypasser',
+            solver_apikey: str = '',
+            model: str = 'gpt4',
+            proxy: str = None,
+            chrome_args: list = [],
+            moderation: bool = True,
+            verbose: bool = False,
+            headless: bool = True,
     ):
         '''
         Initialize the ChatGPT object\n
@@ -101,7 +105,7 @@ class ChatGptDriver:
         self._chatgpt_chat_url = 'https://chat.openai.com'
 
         if not self.__session_token and (
-            not self.__email or not self.__password or not self.__auth_type
+                not self.__email or not self.__password or not self.__auth_type
         ):
             raise ValueError(
                 'Please provide either a session token or login credentials'
@@ -113,7 +117,7 @@ class ChatGptDriver:
         if self.__captcha_solver == '2captcha' and not self.__solver_apikey:
             raise ValueError('Please provide a 2captcha apikey')
         if self.__proxy and not re.findall(
-            r'(https?|socks(4|5)?):\/\/.+:\d{1,5}', self.__proxy
+                r'(https?|socks(4|5)?):\/\/.+:\d{1,5}', self.__proxy
         ):
             raise ValueError('Invalid proxy format')
         if self.__auth_type == 'openai' and self.__captcha_solver == 'pypasser':
@@ -280,7 +284,7 @@ class ChatGptDriver:
             response = self.driver.find_element(By.TAG_NAME, 'pre').text
         response = json.loads(response)
         if (not response) or (
-            'error' in response and response['error'] == 'RefreshAccessTokenError'
+                'error' in response and response['error'] == 'RefreshAccessTokenError'
         ):
             self.logger.debug('Authorization is invalid')
             if not self.__auth_type:
@@ -368,8 +372,8 @@ class ChatGptDriver:
         while self.__is_active:
             self.logger.debug('Updating session...')
             payload = (
-                '{"event":"session","data":{"trigger":"getSession"},"timestamp":%d}'
-                % int(time.time())
+                    '{"event":"session","data":{"trigger":"getSession"},"timestamp":%d}'
+                    % int(time.time())
             )
             try:
                 self.driver.execute_script(
@@ -389,7 +393,8 @@ class ChatGptDriver:
         try:
             # FInd a button to dismiss the dialog with class="btn relative btn-primary" inside the div[@role="dialog"]
             btn_to_dismiss = WebDriverWait(self.driver, 5).until(
-                EC.presence_of_element_located((By.XPATH, '//div[@role="dialog"]//button[@class="btn relative btn-primary"]'))
+                EC.presence_of_element_located(
+                    (By.XPATH, '//div[@role="dialog"]//button[@class="btn relative btn-primary"]'))
             )
             if btn_to_dismiss:
                 self.logger.debug('Dismissing dialog...')
@@ -400,23 +405,25 @@ class ChatGptDriver:
         try:
             # for 3 times
             i = 0
-            while i<=2:
+            while i <= 2:
                 self.__sleep(0.4)
-                if i !=2:
-                    #get the button with class="btn relative btn-neutral ml-auto"
+                if i != 2:
+                    # get the button with class="btn relative btn-neutral ml-auto"
                     btn = WebDriverWait(self.driver, 5).until(
-                        EC.presence_of_element_located((By.XPATH, '//button[@class="btn relative btn-neutral ml-auto"]'))
+                        EC.presence_of_element_located(
+                            (By.XPATH, '//button[@class="btn relative btn-neutral ml-auto"]'))
                     )
                 else:
-                    #get the button with class="btn relative btn-primary ml-auto"
+                    # get the button with class="btn relative btn-primary ml-auto"
                     btn = WebDriverWait(self.driver, 5).until(
-                        EC.presence_of_element_located((By.XPATH, '//button[@class="btn relative btn-primary ml-auto"]'))
+                        EC.presence_of_element_located(
+                            (By.XPATH, '//button[@class="btn relative btn-primary ml-auto"]'))
                     )
                 if btn:
                     self.logger.debug('Dismissing dialog...')
                     self.driver.execute_script('arguments[0].click()', btn)
-                i+=1     
-        except:  
+                i += 1
+        except:
             pass
 
     def __stream_message(self):
@@ -432,27 +439,28 @@ class ChatGptDriver:
             response = self.driver.find_elements(*chatgpt_small_response)[-1]
             content = response.text
             if content != prev_content:
-                yield content[len(prev_content) :]
+                yield content[len(prev_content):]
                 prev_content = content
             if not result_streaming:
                 break
 
-    def send_message(self, message: str, stream: bool = False) -> dict:
-        '''
+    def send_message(self, message: str, response_type=None, stream: bool = False, get_conversation_id:bool=True) -> dict:
+        """
         Send a message to ChatGPT\n
         :param message: Message to send
+        :param html: return Html response if `True`
         :return: Dictionary with keys `message` and `conversation_id`
-        '''
+        """
         self.logger.debug('Ensuring Cloudflare cookies...')
         self.__ensure_cf()
-        #self.__check_blocking_elements()
+        # self.__check_blocking_elements()
 
         # Wait for page to load
         try:
-            textbox = WebDriverWait(self.driver, 10).until(
+            WebDriverWait(self.driver, 10).until(
                 EC.element_to_be_clickable(chatgpt_textbox)
             )
-        except SeleniumExceptions.ElementClickInterceptedException():
+        except SeleniumExceptions.ElementClickInterceptedException:
             pass
 
         self.logger.debug('Sending message...')
@@ -461,7 +469,7 @@ class ChatGptDriver:
                 EC.element_to_be_clickable(chatgpt_textbox)
             )
             textbox.click()
-        except SeleniumExceptions.ElementClickInterceptedException():
+        except SeleniumExceptions.ElementClickInterceptedException:
             self.__check_blocking_elements()
             textbox = WebDriverWait(self.driver, 10).until(
                 EC.element_to_be_clickable(chatgpt_textbox)
@@ -484,25 +492,37 @@ class ChatGptDriver:
                 print(i, end='')
                 self.__sleep(0.1)
             return print()
-        
+
         # Check whether GPT is generating the result
-        # WebDriverWait(self.driver, 1).until_not(
-        #     EC.presence_of_element_located(stop_generating)
+        # WebDriverWait(self.driver, 1000).until_not(
+        #     EC.invisibility_of_element_located(stop_generating)
         # )
 
         self.logger.debug('Waiting for completion...')
-        WebDriverWait(self.driver, 20).until(
-            # When the "Stop generating" button is gone, it means the generation is done
-            EC.presence_of_element_located(stop_generating)
-        )
 
-        try:
-            WebDriverWait(self.driver, 100).until(
-                # When the "Regenerate response" button is available, it means the generation is done
-                EC.presence_of_element_located(regenerate_response)
-            )
-        except SeleniumExceptions.NoSuchElementException:
-            self.logger.debug('Regenerate response button not found!')
+        # wait until finish write then check continue button and click it
+        while True:
+            try:
+                WebDriverWait(self.driver, 240).until_not(
+                    # When stop write, it means the generation is done
+                    EC.presence_of_element_located(chatgpt_streaming)
+                )
+                self.logger.debug('Finish Generation.')
+            except (SeleniumExceptions.NoSuchElementException, SeleniumExceptions.TimeoutException):
+                self.logger.debug('Dont Stop Write...!')
+                continue
+
+            try:
+                WebDriverWait(self.driver, 5).until(
+                    # When the "Continue response" button is available, click it to continue
+                    EC.element_to_be_clickable(continue_response)
+                ).click()
+                self.logger.debug('Click Continue button.')
+                continue
+            except (SeleniumExceptions.NoSuchElementException, SeleniumExceptions.TimeoutException):
+                self.logger.debug('Continue button not found!')
+                break
+
 
         self.logger.debug('Getting response...')
         responses = self.driver.find_elements(*chatgpt_big_response)
@@ -511,35 +531,45 @@ class ChatGptDriver:
             if 'text-red' in response.get_attribute('class'):
                 self.logger.debug('Response is an error')
                 raise ValueError(response.text)
-        response = self.driver.find_elements(*chatgpt_small_response)[-1]
+        response = self.driver.find_elements(*chatgpt_small_response)
+        try:
+            response = response[-1]
+        except IndexError:
+            self.logger.debug('Response not found, resetting conversation...')
+            self.reset_conversation()
+            raise ValueError('Response not found')
 
-        content = markdownify(response.get_attribute('innerHTML')).replace(
-            'Copy code`', '`'
-        )
-
-        pattern = re.compile(
-            r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
-        )
-        matches = pattern.search(self.driver.current_url)
-        if not matches:
-            self.driver.refresh()
-            self.__sleep(2)
-            #self.__check_blocking_elements()
-            self.driver.execute_script("arguments[0].click();", WebDriverWait(self.driver, 10).until(
-                EC.element_to_be_clickable(chatgpt_chats_list_first_node)
-            ))
-            self.__sleep(2)
-            #print(self.driver.current_url)
+        if response_type == "html":
+            content = response.get_attribute('innerHTML')
+        else:
+            content = markdownify(response.get_attribute('innerHTML')).replace(
+                'Copy code`', '`'
+            )
+        if get_conversation_id:
+            pattern = re.compile(
+                r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+            )
             matches = pattern.search(self.driver.current_url)
+            if not matches:
+                self.driver.refresh()
+                self.__sleep(2)
+                # self.__check_blocking_elements()
+                self.driver.execute_script("arguments[0].click();", WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable(chatgpt_chats_list_first_node)
+                ))
+                self.__sleep(2)
+                # print(self.driver.current_url)
+                matches = pattern.search(self.driver.current_url)
 
+            # get current url and print it
+            # print(self.driver.current_url)
+            # print(matches)
 
-        #get current url and print it
-        #print(self.driver.current_url)
-        #print(matches)
-
-        conversation_id = matches.group()
+            conversation_id = matches.group()
+        else:
+            conversation_id = ""
         return {'message': content, 'conversation_id': conversation_id}
-        #return {'message': content}
+        # return {'message': content}
 
     def __sleep(self, sec=1.0, multiplier=2) -> None:
         """
